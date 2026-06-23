@@ -25,14 +25,11 @@ jobs:
           unzip -q android-ndk-r25b-linux.zip -d /tmp
           rm android-ndk-r25b-linux.zip
 
-      # 关键：同时创建两个符号链接，满足不同版本 godot-cpp 的查找
       - name: Setup NDK symlinks
         run: |
           sudo rm -rf /usr/local/lib/android/sdk/ndk
           sudo mkdir -p /usr/local/lib/android/sdk/ndk
-          # godot-cpp 4.2.2 需要的默认路径
           sudo ln -s /tmp/android-ndk-r25b /usr/local/lib/android/sdk/ndk/23.2.8568313
-          # 我们之前自定义 SConstruct 使用的路径（保留）
           sudo ln -s /tmp/android-ndk-r25b /usr/local/lib/android/sdk/ndk/28.1.13356709
 
       - name: Replace godot-cpp with 4.2.2
@@ -46,7 +43,6 @@ jobs:
           cd transformer_gdextension/godot-cpp-master
           scons target=template_release generate_bindings=yes -j$(nproc)
 
-      # 编译 godot-cpp，不再传递 ANDROID_NDK_ROOT，它会自动找到符号链接路径
       - name: Compile godot-cpp for Android
         run: |
           cd transformer_gdextension/godot-cpp-master
@@ -121,9 +117,11 @@ jobs:
           env.Append(CCFLAGS=['-fPIC', '-O3', '-std=c++17'])
           env.Append(LINKFLAGS=['-fPIC'])
 
+          # 关键：添加 gdextension/ 包含路径，以找到 gdextension_interface.h
           env.Append(CPPPATH=[env['godot_cpp_dir'] + '/include/',
                               env['godot_cpp_dir'] + '/include/core/',
-                              env['godot_cpp_dir'] + '/gen/include/'])
+                              env['godot_cpp_dir'] + '/gen/include/',
+                              env['godot_cpp_dir'] + '/gdextension/'])
 
           env.Append(LIBPATH=[env['godot_cpp_dir'] + '/bin/'])
           env.Append(LIBS=['godot-cpp'])
