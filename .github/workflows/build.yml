@@ -31,12 +31,12 @@ jobs:
           sudo mkdir -p /usr/local/lib/android/sdk/ndk
           sudo ln -s /tmp/android-ndk-r25b /usr/local/lib/android/sdk/ndk/28.1.13356709
 
-      # 修正分支名：使用 4.2-stable（与 Godot 4.2.2 匹配）
-      - name: Replace godot-cpp with 4.2-stable
+      # 这里使用正确的标签 godot-4.2.2-stable
+      - name: Replace godot-cpp with 4.2.2
         run: |
           cd transformer_gdextension
           rm -rf godot-cpp-master
-          git clone --depth 1 --branch 4.2-stable https://github.com/godotengine/godot-cpp.git godot-cpp-master
+          git clone --depth 1 --branch godot-4.2.2-stable https://github.com/godotengine/godot-cpp.git godot-cpp-master
 
       - name: Generate godot-cpp bindings
         run: |
