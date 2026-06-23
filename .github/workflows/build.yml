@@ -41,39 +41,60 @@ jobs:
           cd transformer_gdextension/godot-cpp-master
           scons platform=android target=template_release -j$(nproc)
 
-      # 自动修复源码中的 Godot 4 兼容性问题
+      # 全自动修复：适配 Godot 4 API 和 C++ 限制
       - name: Fix source code for Godot 4
         run: |
           cd transformer_gdextension/src
           python3 << 'PYEOF'
           import re
 
-          # 读取文件
           with open('transformer_model.cpp', 'r') as f:
               content = f.read()
 
-          # 1. 修改 read_float32_array 函数签名，接收 Ref<FileAccess>
+          # 1. 修复 read_float32_array 签名
           content = content.replace(
               'static PackedFloat32Array read_float32_array(FileAccess* file, int count) {',
               'static PackedFloat32Array read_float32_array(const Ref<FileAccess>& file, int count) {'
           )
+          # 2. if (!file) -> if (file.is_null())
+          content = content.replace('if (!file) return false;', 'if (file.is_null()) return false;')
 
-          # 2. load_model 中：auto file = FileAccess::open(...) 后改为检查 is_null()
-          content = content.replace(
-              'if (!file) return false;',
-              'if (file.is_null()) return false;'
+          # 3. 确保包含 cstring（memcpy）
+          if '#include <cstring>' not in content:
+              content = '#include <cstring>\n' + content
+
+          # 4. 替换所有指针范围构造 PackedFloat32Array
+          # 模式: token_vec
+          content = re.sub(
+              r'PackedFloat32Array token_vec\(x\.ptr\(\) \+ i \* hidden_size, x\.ptr\(\) \+ \(i \+ 1\) \* hidden_size\);',
+              'PackedFloat32Array token_vec;\n            token_vec.resize(hidden_size);\n            memcpy(token_vec.ptrw(), x.ptr() + i * hidden_size, hidden_size * sizeof(float));',
+              content
+          )
+          # 模式: k_cur
+          content = re.sub(
+              r'PackedFloat32Array k_cur\(K_new\.ptr\(\) \+ h_start, K_new\.ptr\(\) \+ h_start \+ head_dim\);',
+              'PackedFloat32Array k_cur;\n            k_cur.resize(head_dim);\n            memcpy(k_cur.ptrw(), K_new.ptr() + h_start, head_dim * sizeof(float));',
+              content
+          )
+          # 模式: v_cur
+          content = re.sub(
+              r'PackedFloat32Array v_cur\(V_new\.ptr\(\) \+ h_start, V_new\.ptr\(\) \+ h_start \+ head_dim\);',
+              'PackedFloat32Array v_cur;\n            v_cur.resize(head_dim);\n            memcpy(v_cur.ptrw(), V_new.ptr() + h_start, head_dim * sizeof(float));',
+              content
+          )
+          # 模式: tok (出现多次)
+          content = re.sub(
+              r'PackedFloat32Array tok\(x\.ptr\(\) \+ i \* input_size, x\.ptr\(\) \+ \(i \+ 1\) \* input_size\);',
+              'PackedFloat32Array tok;\n            tok.resize(input_size);\n            memcpy(tok.ptrw(), x.ptr() + i * input_size, input_size * sizeof(float));',
+              content
           )
 
-          # 3. 将所有 read_float32_array(file, 替换为 read_float32_array(file, （不变），因为现在签名兼容
-          # 但需要确保 file-> 调用正常，Ref 重载了 ->，所以没问题
-
-          # 4. 此外，bytes_to_float32_array 也使用了 decode_float，确保 PackedByteArray 方法可用
-          # 无需修改
+          # 5. cached_positions[layer][h].ptr() -> .data()
+          content = content.replace('cached_positions[layer][h].ptr()', 'cached_positions[layer][h].data()')
 
           with open('transformer_model.cpp', 'w') as f:
               f.write(content)
-
-          print("Fixed transformer_model.cpp for Godot 4 compatibility")
+          print("Fixed transformer_model.cpp successfully")
           PYEOF
 
       - name: Fix SConstruct and prepare library
