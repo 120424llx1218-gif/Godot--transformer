@@ -31,22 +31,23 @@ jobs:
           sudo mkdir -p /usr/local/lib/android/sdk/ndk
           sudo ln -s /tmp/android-ndk-r25b /usr/local/lib/android/sdk/ndk/28.1.13356709
 
-      # 这里使用正确的标签 godot-4.2.2-stable
       - name: Replace godot-cpp with 4.2.2
         run: |
           cd transformer_gdextension
           rm -rf godot-cpp-master
           git clone --depth 1 --branch godot-4.2.2-stable https://github.com/godotengine/godot-cpp.git godot-cpp-master
 
+      # 生成绑定（不需要 NDK）
       - name: Generate godot-cpp bindings
         run: |
           cd transformer_gdextension/godot-cpp-master
           scons target=template_release generate_bindings=yes -j$(nproc)
 
+      # 编译 godot-cpp，强制指定 NDK 路径
       - name: Compile godot-cpp for Android
         run: |
           cd transformer_gdextension/godot-cpp-master
-          scons platform=android target=template_release -j$(nproc)
+          scons platform=android target=template_release ANDROID_NDK_ROOT=/tmp/android-ndk-r25b -j$(nproc)
 
       - name: Fix source code for Godot 4
         run: |
@@ -136,6 +137,7 @@ jobs:
           cd godot-cpp-master/bin
           ln -sf libgodot-cpp.android.template_release.arm64.a libgodot-cpp.a
 
+      # 编译 GDExtension，同样强制指定 NDK
       - name: Compile GDExtension
         env:
           ANDROID_NDK_ROOT: /tmp/android-ndk-r25b
