@@ -93,6 +93,35 @@ jobs:
               f.write(content)
           PYEOF
 
+      - name: Fix multi_head_attention_full output projection
+        run: |
+          cd transformer_gdextension/src
+          python3 << 'PYEOF'
+          with open('transformer_model.cpp', 'r') as f:
+              content = f.read()
+
+          old_line = "auto out = batch_linear(Wo, bo, input_size);"
+          new_code = """    // 正确：对 attn_out 进行输出投影
+              PackedFloat32Array out;
+              out.resize(seq_len * input_size);
+              for (int i = 0; i < seq_len; i++) {
+                  PackedFloat32Array token_vec;
+                  token_vec.resize(hidden_size);
+                  memcpy(token_vec.ptrw(), attn_out.ptr() + i * hidden_size, hidden_size * sizeof(float));
+                  auto res = linear(token_vec, input_size, Wo, bo);
+                  memcpy(out.ptrw() + i * input_size, res.ptr(), input_size * sizeof(float));
+              }"""
+
+          if old_line in content:
+              content = content.replace(old_line, new_code)
+              print("✅ 已替换输出投影错误。")
+          else:
+              print("⚠️ 未找到需要替换的行，可能已修复。")
+
+          with open('transformer_model.cpp', 'w') as f:
+              f.write(content)
+          PYEOF
+
       - name: Fix SConstruct and prepare library
         run: |
           cd transformer_gdextension
@@ -117,7 +146,6 @@ jobs:
           env.Append(CCFLAGS=['-fPIC', '-O3', '-std=c++17'])
           env.Append(LINKFLAGS=['-fPIC'])
 
-          # 关键：添加 gdextension/ 包含路径，以找到 gdextension_interface.h
           env.Append(CPPPATH=[env['godot_cpp_dir'] + '/include/',
                               env['godot_cpp_dir'] + '/include/core/',
                               env['godot_cpp_dir'] + '/gen/include/',
