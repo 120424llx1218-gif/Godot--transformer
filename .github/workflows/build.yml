@@ -41,6 +41,41 @@ jobs:
           cd transformer_gdextension/godot-cpp-master
           scons platform=android target=template_release -j$(nproc)
 
+      # 自动修复源码中的 Godot 4 兼容性问题
+      - name: Fix source code for Godot 4
+        run: |
+          cd transformer_gdextension/src
+          python3 << 'PYEOF'
+          import re
+
+          # 读取文件
+          with open('transformer_model.cpp', 'r') as f:
+              content = f.read()
+
+          # 1. 修改 read_float32_array 函数签名，接收 Ref<FileAccess>
+          content = content.replace(
+              'static PackedFloat32Array read_float32_array(FileAccess* file, int count) {',
+              'static PackedFloat32Array read_float32_array(const Ref<FileAccess>& file, int count) {'
+          )
+
+          # 2. load_model 中：auto file = FileAccess::open(...) 后改为检查 is_null()
+          content = content.replace(
+              'if (!file) return false;',
+              'if (file.is_null()) return false;'
+          )
+
+          # 3. 将所有 read_float32_array(file, 替换为 read_float32_array(file, （不变），因为现在签名兼容
+          # 但需要确保 file-> 调用正常，Ref 重载了 ->，所以没问题
+
+          # 4. 此外，bytes_to_float32_array 也使用了 decode_float，确保 PackedByteArray 方法可用
+          # 无需修改
+
+          with open('transformer_model.cpp', 'w') as f:
+              f.write(content)
+
+          print("Fixed transformer_model.cpp for Godot 4 compatibility")
+          PYEOF
+
       - name: Fix SConstruct and prepare library
         run: |
           cd transformer_gdextension
